@@ -83,8 +83,8 @@ bool BlurEstimator::Process() {
     if(is_saved_) {
         deblurred_image *= 255.;
         depth_combined *= 255.;
-        cv::imwrite("./deblurred.png", deblurred_image);
-        cv::imwrite("./depth.png", depth_combined);
+        cv::imwrite(arguments_.output_file_rgb.c_str(), deblurred_image);
+        cv::imwrite(arguments_.output_file_depth.c_str(), depth_combined);
     }
 }
 
