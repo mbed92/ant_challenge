@@ -10,6 +10,11 @@ I have images of an ant in the *bug* folder. The task is to come up with an algo
 # Also
 Play with generated images using http://depthy.me 
 
+# Tested on
+* OpenCV 3.3.0
+* CMake 2.8
+* C++14
+
 # Results
 ![](https://github.com/mbed92/ant_challenge/blob/master/depth.png)
 ![](https://github.com/mbed92/ant_challenge/blob/master/deblurred.png)
