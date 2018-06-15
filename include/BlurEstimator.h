@@ -27,11 +27,11 @@ class BlurEstimator : public IEstimator {
 
     // implemented methods from opencv
     bool Threshold(const cv::Mat& input_matrix, cv::Mat& output_matrix, float thresh, float max);
+    bool MedianBlur(const cv::Mat& image, cv::Mat& result, int k_size);
     void Convolution(const cv::Mat &image, double **kernel, cv::Mat &result, int k_size);
     double Convolve2D(const float *image, double **kernel, int sx, int sy, int width, int height, int kernel_size, int channels);
-    double Dilate2D(const float *image, int sy, int sx, int width, int height, int kernel_size);
+    double GetMedian(const float *image, int sx, int sy, int width, int height, int kernel_size, int channels);
     void RBG2GRAYSCALE(const cv::Mat &image, cv::Mat &result);
-    void Dilate(const cv::Mat &image, int k_size, cv::Mat& result);
 
     // utilities
     std::vector<std::string> GetImagePaths();

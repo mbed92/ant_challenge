@@ -70,7 +70,7 @@ bool BlurEstimator::Process() {
     Replicate(inv_laplacian, inv_laplacian);
     average_frame /= image_paths.size();
 
-    // combine blurred average_frame with the sum of sharp parts
+    // combine blurred average_frame with the sum of sharp parts (weighted sum)
     cv::Mat deblurred_image = 1.5 * frames_combined + 0.8 * average_frame.mul(inv_laplacian);
 
     // visualize and save results
@@ -80,7 +80,6 @@ bool BlurEstimator::Process() {
         cv::imshow("depth_image", depth_combined);
         cv::waitKey();
     }
-
     if(is_saved_) {
         deblurred_image *= 255.;
         depth_combined *= 255.;
@@ -127,7 +126,7 @@ cv::Mat BlurEstimator::LoadImage(const std::string &path, cv::ImreadModes mode) 
 
     cv::Mat output;
     image.convertTo(output, CV_32F);
-    output /= 255.;
+    output /= 255.; // normalize image to 0-1 (mainly for imshow purpose) -> remember to multiplicate * 255 while saving!
     return output;
 }
 
@@ -144,18 +143,17 @@ bool BlurEstimator::EstimateBlur(const cv::Mat &input_image, cv::Mat &laplacian)
 
 double BlurEstimator::Convolve2D(const float *image, double **kernel, int sx, int sy, int width, int height, int kernel_size, int channels) {
     double result = 0.0;
-    for (int y = 0; y < kernel_size; y++) {
-        for (int x = 0; x < kernel_size; x++) {
-            int cx = sx + x;
-            int cy = sy + y;
+    for (int kx = 0; kx < kernel_size; kx++) {
+        for (int ky = 0; ky < kernel_size; ky++) {
+            int cx = sx + ky;
+            int cy = sy + kx;
             float d;
             if (cx < 0 || cx >= width || cy < 0 || cy >= height) {
                 d = 0;
+            } else {
+                d = *(image + width * kx * channels + ky * channels);
             }
-            else {
-                d = *(image + width * y * channels + x * channels);
-            }
-            result += d * kernel[x][y];
+            result += d * kernel[ky][kx];
         }
     }
     return result;
@@ -169,14 +167,15 @@ void BlurEstimator::Convolution(const cv::Mat &image, double **kernel, cv::Mat &
     auto data = (float *) image.data;
     result = cv::Mat::zeros(rows, cols, image.type());
     auto *dst_data = (float *) result.data;
-    int k_shift = (k_size - 1) / 2;
 
-    for (int x = 0; x < rows; x++) {
-        for (int y = 0; y < cols; y++) {
-            for (int a = 0; a < chan; a++) {
-                float *itData = (data + (x - k_shift) * cols * chan + (y - k_shift) * chan + a);
-                *(dst_data + x * cols * chan + y * chan + a) =
-                        static_cast<float>(Convolve2D(itData, kernel, y - k_shift, x - k_shift, cols, rows, k_size, chan));
+    // iterate over rows and columns of image. For each pixel iterate over current kernel (Convolve2D)
+    int k_shift = (k_size - 1) / 2;
+    for (int i = 0; i < rows; i++) {
+        for (int k = 0; k < cols; k++) {
+            for (int c = 0; c < chan; c++) {
+                float *itData = (data + (i - k_shift) * cols * chan + (k - k_shift) * chan + c);
+                *(dst_data + i * cols * chan + k * chan + c) =
+                        static_cast<float>(Convolve2D(itData, kernel, k - k_shift, i - k_shift, cols, rows, k_size, chan));
             }
         }
     }
@@ -202,40 +201,6 @@ bool BlurEstimator::Threshold(const cv::Mat& input_matrix, cv::Mat& output_matri
     return true;
 }
 
-void BlurEstimator::SetBlurKernel() {
-    blur_kernel = new double *[3];
-    for (int i = 0; i < 3; i++) {
-        blur_kernel[i] = new double[3];
-    }
-
-    blur_kernel[0][0] = 1/16.;
-    blur_kernel[0][1] = 2/16.;
-    blur_kernel[0][2] = 1/16.;
-    blur_kernel[1][0] = 2/16.;
-    blur_kernel[1][1] = 4/16.;
-    blur_kernel[1][2] = 2/16.;
-    blur_kernel[2][0] = 1/16.;
-    blur_kernel[2][1] = 2/16.;
-    blur_kernel[2][2] = 1/16.;
-}
-
-void BlurEstimator::SetLaplacianKernel() {
-    laplacian_kernel = new double *[3];
-    for (int i = 0; i < 3; i++) {
-        laplacian_kernel[i] = new double[3];
-    }
-
-    laplacian_kernel[0][0] = -1.0;
-    laplacian_kernel[0][1] = -1.0;
-    laplacian_kernel[0][2] = -1.0;
-    laplacian_kernel[1][0] = -1.0;
-    laplacian_kernel[1][1] = 8.0;
-    laplacian_kernel[1][2] = -1.0;
-    laplacian_kernel[2][0] = -1.0;
-    laplacian_kernel[2][1] = -1.0;
-    laplacian_kernel[2][2] = -1.0;
-}
-
 void BlurEstimator::RBG2GRAYSCALE(const cv::Mat &image, cv::Mat &result) {
     int cols = image.cols;
     int rows = image.rows;
@@ -247,11 +212,12 @@ void BlurEstimator::RBG2GRAYSCALE(const cv::Mat &image, cv::Mat &result) {
 
     for(int i = 0; i < rows; i++) {
         for(int k = 0; k < cols; k++){
-            for (int a = 0; a < chan; a++) {
+            for (int c = 0; c < chan; c++) {
+                // channels are set as BGR
                 auto b = *(data + cols * i * chan + k * chan);
                 auto g = *(data + cols * i * chan + k * chan + 1);
                 auto r = *(data + cols * i * chan + k * chan + 2);
-                *(dst_data + i * cols + k) = static_cast<float>(0.21*r + 0.72*g + 0.07*b);
+                *(dst_data + i * cols + k) = static_cast<float>(0.21*r + 0.72*g + 0.07*b);  // rgb formula
             }
         }
     }
@@ -276,3 +242,83 @@ float BlurEstimator::GetMax(const cv::Mat &image) {
     return max_tmp;
 }
 
+void BlurEstimator::SetBlurKernel() {
+    blur_kernel = new double *[3];
+    for (int i = 0; i < 3; i++) {
+        blur_kernel[i] = new double[3];
+    }
+
+    blur_kernel[0][0] = 1/16.;
+    blur_kernel[0][1] = 2/16.;
+    blur_kernel[0][2] = 1/16.;
+    blur_kernel[1][0] = 2/16.;
+    blur_kernel[1][1] = 4/16.;
+    blur_kernel[1][2] = 2/16.;
+    blur_kernel[2][0] = 1/16.;
+    blur_kernel[2][1] = 2/16.;
+    blur_kernel[2][2] = 1/16.;
+}
+
+void BlurEstimator::SetLaplacianKernel() {
+    laplacian_kernel = new double *[3];
+    for (int i = 0; i < 3; i++) {
+        laplacian_kernel[i] = new double[3];
+    }
+
+    // laplacian kernel with -8 in the middle instead of -4
+    // gives results with sharper edges and smaller overall variance
+    laplacian_kernel[0][0] = -1.0;
+    laplacian_kernel[0][1] = -1.0;
+    laplacian_kernel[0][2] = -1.0;
+    laplacian_kernel[1][0] = -1.0;
+    laplacian_kernel[1][1] = 8.0;
+    laplacian_kernel[1][2] = -1.0;
+    laplacian_kernel[2][0] = -1.0;
+    laplacian_kernel[2][1] = -1.0;
+    laplacian_kernel[2][2] = -1.0;
+}
+
+bool BlurEstimator::MedianBlur(const cv::Mat &image, cv::Mat &result, int k_size) {
+    int cols = image.cols;
+    int rows = image.rows;
+    int chan = image.channels();
+    auto data = (float *) image.data;
+    result = cv::Mat::zeros(rows, cols, image.type());
+    auto *dst_data = (float *) result.data;
+
+    // iterate over rows and columns of image. For each pixel iterate over current kernel (Convolve2D)
+    int k_shift = (k_size - 1) / 2;
+    for (int i = 0; i < rows; i++) {
+        for (int k = 0; k < cols; k++) {
+            for (int c = 0; c < chan; c++) {
+                float *itData = (data + (i - k_shift) * cols * chan + (k - k_shift) * chan + c);
+                *(dst_data + i * cols * chan + k * chan + c) =
+                        static_cast<float>(GetMedian(itData, k - k_shift, i - k_shift, cols, rows, k_size, chan));
+            }
+        }
+    }
+    return true;
+}
+
+double BlurEstimator::GetMedian(const float *image, int sx, int sy, int width, int height, int kernel_size, int channels) {
+    double result;
+    std::vector<float> median_vec;
+    for (int kx = 0; kx < kernel_size; kx++) {
+        for (int ky = 0; ky < kernel_size; ky++) {
+            int cx = sx + ky;
+            int cy = sy + kx;
+            float d;
+            if (cx < 0 || cx >= width || cy < 0 || cy >= height) {
+                d = 0;
+            } else {
+                d = *(image + width * kx * channels + ky * channels);
+            }
+            // capture current value and add it to the vector
+            median_vec.push_back(d);
+        }
+    }
+    // sort and pull the middle value
+    std::sort(median_vec.begin(), median_vec.end());
+    result = median_vec[median_vec.size()/2];
+    return result;
+}
