@@ -1,0 +1,12 @@
+bug/b_bigbug0001_croppped.png
+bug/b_bigbug0002_croppped.png
+bug/b_bigbug0003_croppped.png
+bug/b_bigbug0004_croppped.png
+bug/b_bigbug0005_croppped.png
+bug/b_bigbug0006_croppped.png
+bug/b_bigbug0007_croppped.png
+bug/b_bigbug0008_croppped.png
+bug/b_bigbug0009_croppped.png
+bug/b_bigbug0010_croppped.png
+bug/b_bigbug0011_croppped.png
+bug/b_bigbug0012_croppped.png
