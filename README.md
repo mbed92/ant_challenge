@@ -5,7 +5,7 @@ I have images of an ant in the *bug* folder. The task is to come up with an algo
 * mkdir build && cd build
 * cmake ..
 * make
-* ./TooploxBlurDeph <list_of_files> <output_rgb_image.png> <output_depth_map.png>
+* ./TooploxBlurDepth <list_of_files> <output_rgb_image.png> <output_depth_map.png>
 
 # Also
 Play with generated images using http://depthy.me 
