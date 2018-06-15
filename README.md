@@ -11,5 +11,5 @@ I have images of an ant in the *bug* folder. The task is to come up with an algo
 Play with generated images using http://depthy.me 
 
 # Results
-![alt text](https://raw.githubusercontent.com/mbed92/ant_challenge/deblurred.png)
-![alt text](https://raw.githubusercontent.com/mbed92/ant_challenge/depth.png)
+![](https://raw.githubusercontent.com/mbed92/ant_challenge/deblurred.png)
+![](https://raw.githubusercontent.com/mbed92/ant_challenge/depth.png)
