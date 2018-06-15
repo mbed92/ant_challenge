@@ -26,46 +26,36 @@ bool BlurEstimator::Process() {
     float depth_weight_factor = 1.0f / image_paths.size();
 
     if(is_visualized_){
-        cv::namedWindow("deblurred_image", CV_WINDOW_NORMAL);
         cv::namedWindow("depth_image", CV_WINDOW_NORMAL);
     }
-    cv::Mat frames_sharp, frames_combined, depth_combined;
+    cv::Mat frames_combined, depth_combined;
     cv::Mat average_laplacian, average_frame;
 
-    bool initialized = false;
     for(auto& path : image_paths)
     {
         std::cout << "Processing: " << path << std::endl;
         cv::Mat mask, laplacian;
         cv::Mat frame = LoadImage(path, cv::IMREAD_COLOR);
-        if(!initialized && !frame.empty()) {
-            frames_combined = cv::Mat::zeros(frame.size(), frame.type());
-            average_frame = cv::Mat::zeros(frame.size(), frame.type());
-            depth_combined = cv::Mat::zeros(frame.size(), CV_32FC1);
-            initialized = true;
-        }
-
         bool is_estimated = EstimateBlur(frame, laplacian);
         if(!is_estimated) {
             std::cerr << "Cannot estimate depth in frame: " << path << std::endl;
         }
 
+        // initialize 'average' arrays
         average_laplacian = average_laplacian.empty() ? laplacian : (average_laplacian + laplacian);
-        average_frame += frame;
+        average_frame = average_frame.empty() ? cv::Mat::zeros(frame.size(), frame.type()) : (average_frame + frame);
 
         // 1. apply mask to RGB
         cv::Mat laplacian_replicated, sharp;
         Replicate(laplacian, laplacian_replicated);
         sharp = frame.mul(laplacian_replicated);
-        frames_combined += sharp;
+        frames_combined = frames_combined.empty() ? cv::Mat::zeros(frame.size(), frame.type()) : (frames_combined + sharp);
 
         // 2. create depth map
         cv::Mat laplacian_depth_thresholded(laplacian.size(), laplacian.type(), 0.0);
         cv::Mat laplacian_depth_dilated(laplacian.size(), laplacian.type(), 0.0);
         Threshold(laplacian, laplacian_depth_thresholded, 0.2, depth_weight * depth_weight);    // square for better visualization
-//        Dilate(laplacian_depth_thresholded, 3, laplacian_depth_dilated);
-//        Convolution(laplacian_depth_thresholded, blur_kernel, laplacian_depth_thresholded, 3);
-        depth_combined += laplacian_depth_thresholded;
+        depth_combined = depth_combined.empty() ? cv::Mat::zeros(frame.size(), CV_32FC1) : (depth_combined + laplacian_depth_thresholded);
 
         // visualize progress
         if(is_visualized_) {
@@ -74,12 +64,18 @@ bool BlurEstimator::Process() {
         }
         depth_weight -= depth_weight_factor;
     }
+
+    // invert laplacian to obtain blurred part of average_frame
     cv::Mat inv_laplacian = 1.0 - average_laplacian;
     Replicate(inv_laplacian, inv_laplacian);
     average_frame /= image_paths.size();
+
+    // combine blurred average_frame with the sum of sharp parts
     cv::Mat deblurred_image = 1.5 * frames_combined + 0.8 * average_frame.mul(inv_laplacian);
 
+    // visualize and save results
     if(is_visualized_) {
+        cv::namedWindow("deblurred_image", CV_WINDOW_NORMAL);
         cv::imshow("deblurred_image", deblurred_image);
         cv::imshow("depth_image", depth_combined);
         cv::waitKey();
@@ -146,18 +142,6 @@ bool BlurEstimator::EstimateBlur(const cv::Mat &input_image, cv::Mat &laplacian)
     return true;
 }
 
-double BlurEstimator::Dilate2D(const float *image, int sy, int sx, int width, int height, int kernel_size){
-    double max = 0.0;
-    for (int y = 0; y < kernel_size; y++) {
-        for (int x = 0; x < kernel_size; x++) {
-            auto d = *(image + width * y + x);
-            if (d > max)
-                max = d;
-        }
-    }
-    return max;
-}
-
 double BlurEstimator::Convolve2D(const float *image, double **kernel, int sx, int sy, int width, int height, int kernel_size, int channels) {
     double result = 0.0;
     for (int y = 0; y < kernel_size; y++) {
@@ -199,6 +183,7 @@ void BlurEstimator::Convolution(const cv::Mat &image, double **kernel, cv::Mat &
 }
 
 void BlurEstimator::Replicate(const cv::Mat &mat, cv::Mat& output) {
+    // Needed to multiplicate one channel mat with 3 channels
     cv::Mat t[] = {mat, mat, mat};
     cv::merge(t, 3, output);
 }
@@ -289,32 +274,5 @@ float BlurEstimator::GetMax(const cv::Mat &image) {
         }
     }
     return max_tmp;
-}
-
-void BlurEstimator::Dilate(const cv::Mat &image, int k_size, cv::Mat& result) {
-
-    // only on binary images
-    assert(image.channels() == 1);
-
-    int cols = image.cols;
-    int rows = image.rows;
-    auto data = (float *) image.data;
-    result = cv::Mat::zeros(rows, cols, image.type());
-    auto *dst_data = (float *) result.data;
-    int k_shift = (k_size - 1) / 2;
-
-    // dilation is in fact argmax(kernel) in binary images
-    for (int x = 1; x < rows - 1; x++) {
-        for (int y = 1; y < cols - 1; y++) {
-
-            // iterate over kernel
-            for (int i = 0; i < k_size; i++) {
-                for (int k = 0; k < k_size; k++) {
-                    float *itData = (data + (x - k_shift) * cols + (y - k_shift));
-                    *(dst_data + x * cols + y) = static_cast<float>(Dilate2D(itData, y - k_shift, x - k_shift, cols, rows, k_size));
-                }
-            }
-        }
-    }
 }
 
